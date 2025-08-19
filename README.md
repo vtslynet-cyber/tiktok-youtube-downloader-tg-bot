@@ -36,7 +36,17 @@
    python bot.py
    ```
 
+## Instagram и cookies
+
+Для скачивания Instagram Reels/Stories иногда требуется авторизация.  
+Чтобы бот корректно скачивал такие видео, нужно использовать cookies-файл.
+
+1. Авторизуйтесь в Instagram через браузер (Chrome/Firefox).
+2. Сохраните cookies (например, через расширение [EditThisCookie](https://chrome.google.com/webstore/detail/editthiscookie/fngmhnnpilhplaeedifhccceomclgfbg)).
+3. Сохраните файл как `cookies.txt`.
+4. Переместите его на сервер в папку с ботом.
+
 ## Зависимости
 Список зависимостей — в `requirements.txt`.
 
-### UDP‼️Сторис из Inst на данный момент не поддерживает. 
+### v1.0.0
