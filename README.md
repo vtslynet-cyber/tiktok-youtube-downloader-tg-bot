@@ -1,5 +1,7 @@
 # Телеграмм бот для скачки видео из TikTok, YouTube Shorts и Reels.
 
+![Логотип бота](https://github.com/vtslynet-cyber/tiktok-youtube-downloader-tg-bot/blob/main/logobot.png)
+
 Этот бот позволяет скачивать видео без водяных знаков из TikTok, YouTube Shorts и Instagram.
 
 ## Возможности
