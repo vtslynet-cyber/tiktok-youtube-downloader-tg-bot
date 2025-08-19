@@ -1,0 +1,27 @@
+# Логи
+*.log
+
+# Файлы пользователей и статистики
+users.txt
+stats.txt
+
+# Временные загружаемые видео
+downloaded_video.*
+
+# Кэш и временные файлы Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Виртуальные окружения
+venv/
+.env/
+
+# Настройки IDE
+.vscode/
+.idea/
+
+# Системные файлы
+.DS_Store
+Thumbs.db
