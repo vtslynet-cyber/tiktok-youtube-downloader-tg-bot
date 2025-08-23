@@ -1,27 +1,49 @@
-# Логи
+# Logs
 *.log
+bot.log
 
-# Файлы пользователей и статистики
+# Runtime data (do NOT commit user data)
 users.txt
 stats.txt
+channels.txt
 
-# Временные загружаемые видео
+# Cookies / secrets
+cookies.txt
+*_cookies.txt
+www.*.com_cookies.txt
+
+# Downloads / temp media produced by yt-dlp/ffmpeg
 downloaded_video.*
+yt_*.mp4
+yt_*.webm
+yt_*.m4a
+*.part
+*.ytdl
+*.aria2
 
-# Кэш и временные файлы Python
+# Python caches / build artifacts
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
 
-# Виртуальные окружения
+# Virtual environments / env files
 venv/
-.env/
+.venv/
+.env
+.env.*
+.python-version
 
-# Настройки IDE
+# IDE settings
 .vscode/
 .idea/
 
-# Системные файлы
+# OS files
 .DS_Store
 Thumbs.db
