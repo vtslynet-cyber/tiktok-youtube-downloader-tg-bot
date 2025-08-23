@@ -1,6 +1,12 @@
-import os
+import sys, os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
+
 import re
+import glob
 import asyncio
+import contextlib
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
@@ -9,13 +15,17 @@ from telegram.ext import (
 )
 from telegram.error import NetworkError, TimedOut, Forbidden
 
-TOKEN = "ВАШ_ТОКЕН_ОТ_BOTFATHER" #Токен tg
-ADMIN_ID = ВАШ_ID   #Aдмин ID
-
-#Файлы Если будете ставить на сервер <указывайте точный путь до файлов>
-USERS_FILE = "users.txt" #Хранение списка пользователей
-LOG_FILE = "bot.log" #Логирование всех действий
-STATS_FILE = "stats.txt" #Ведение статистики скачиваний
+#Token + admin id
+TOKEN = "ВАШ_ТОКЕН_ОТ_BOTFATHER" 
+ADMIN_ID = ВАШ_ID_ЧИСЛОМ
+#На Windows укажем путь, на Linux оставим пусто (будет взят из PATH)
+FFMPEG_DIR = os.environ.get("FFMPEG_DIR", r"D:\primer\ffmpeg\bin" if os.name == "nt" else "")
+#файлы пользователей, логов, статистики, cookies
+USERS_FILE = os.path.join(BASE_DIR, "users.txt")
+LOG_FILE   = os.path.join(BASE_DIR, "bot.log")
+STATS_FILE = os.path.join(BASE_DIR, "stats.txt")
+COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
+from downloaders.pinterest_async import download_pinterest_video
 
 last_request_time = {}
 
@@ -49,52 +59,77 @@ def update_stats(user_id: int, username: str | None):
     if os.path.exists(STATS_FILE):
         with open(STATS_FILE, "r", encoding="utf-8") as f:
             for line in f:
-                uid, count = line.strip().split(":", 1)
-                stats[uid] = int(count)
-
+                if ":" in line:
+                    uid, count = line.strip().split(":", 1)
+                    try:
+                        stats[uid] = int(count)
+                    except:
+                        stats[uid] = 0
     key = f"{user_id} ({username})"
     stats[key] = stats.get(key, 0) + 1
-
     with open(STATS_FILE, "w", encoding="utf-8") as f:
         for k, v in stats.items():
             f.write(f"{k}:{v}\n")
-
-#/start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    save_user(user.id, user.username)
-    write_log(f"Пользователь {user.id} ({user.username}) нажал /start")
-
-    keyboard = [[InlineKeyboardButton("🔥 Поддержать проект и купить ключ", url="https://t.me/VTSLYVPN_bot")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        "Привет! Отправь мне ссылку на видео (TikTok, YouTube Shorts, Instagram Reels/посты/сторисы), "
-        "и я скачаю его без водяных знаков.",
-        reply_markup=reply_markup
-    )
-
-#yt_dlp model
+#yt-dlp
 async def run_yt_dlp(url: str) -> str | None:
-    proc = await asyncio.create_subprocess_exec(
-        "yt-dlp", url,
-        "--max-filesize", "49M",
+    """
+    Качаем в стримабельный MP4 (H.264+AAC).
+    Запуск через sys.executable -m yt_dlp (не зависит от PATH в systemd).
+    Плюс защита, если процесс не стартовал.
+    """
+    ytdlp_fmt = (
+        "bv*[ext=mp4][vcodec^=avc1][height<=1080]+ba[ext=m4a]/"
+        "b[ext=mp4]/best"
+    )
+    out_tmpl = "yt_%(id)s.%(ext)s"
+    #t-dlp(v2)
+    args = [
+        sys.executable, "-m", "yt_dlp", url,
+        "-f", ytdlp_fmt,
+        "--merge-output-format", "mp4",
+        "--remux-video", "mp4",
+        "--postprocessor-args", "ffmpeg:-movflags +faststart",
         "--no-playlist",
         "--no-continue",
         "--retries", "3",
         "--http-chunk-size", "5M",
         "--restrict-filenames",
-        "-f", "mp4/best",
-        "-o", "downloaded_video.%(ext)s",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
+        "-o", out_tmpl,
+    ]
 
+    #cookies
+    if os.path.exists(COOKIES_FILE):
+        args += ["--cookies", COOKIES_FILE]
+    else:
+        write_log("[INFO] cookies.txt не найден — продолжаю без него")
+
+    #ffmpeg-location только если путь валиден (актуально для Windows)
+    if FFMPEG_DIR and os.path.isdir(FFMPEG_DIR):
+        args += ["--ffmpeg-location", FFMPEG_DIR]
+    else:
+        write_log("[INFO] ffmpeg-location не задан — использую системный ffmpeg из PATH")
+
+    proc = None
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        proc = await asyncio.create_subprocess_exec(
+            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
     except asyncio.TimeoutError:
-        proc.kill()
+        if proc:
+            with contextlib.suppress(Exception):
+                proc.kill()
         write_log("[ERROR] yt-dlp timeout (превышено время ожидания)")
+        return None
+    except FileNotFoundError as e:
+        write_log(f"[ERROR] Не найден yt-dlp/python для запуска: {e}")
+        return None
+    except Exception as e:
+        # если процесс запущен — аккуратно завершим
+        if proc and proc.returncode is None:
+            with contextlib.suppress(Exception):
+                proc.kill()
+        write_log(f"[ERROR] Ошибка запуска yt-dlp: {e}")
         return None
 
     out = stdout.decode("utf-8", errors="ignore")
@@ -104,27 +139,58 @@ async def run_yt_dlp(url: str) -> str | None:
     if err.strip():
         write_log(f"yt-dlp stderr:\n{err}")
 
-    match = re.search(r"\[download\] Destination: (.+)", out)
-    if match:
-        filename = match.group(1).strip()
-        if os.path.exists(filename):
-            size = os.path.getsize(filename) / 1024 / 1024
-            write_log(f"Файл скачан: {filename}, размер: {size:.2f} MB")
-            return filename
+    # ищем итоговый mp4
+    patterns = [
+        r'\[Merger\] Merging formats into "(.+?\.mp4)"',
+        r'\[download\] Destination: (.+?\.mp4)',
+        r'\[AtomicParsley\] Writing metadata to file: (.+?\.mp4)',
+    ]
+    filename = None
+    for pat in patterns:
+        m = re.search(pat, out)
+        if m:
+            filename = m.group(1).strip()
+            break
 
-    write_log("[ERROR] Файл не найден после скачивания")
-    return None
+    if not filename:
+        mp4s = sorted(glob.glob("yt_*.mp4"), key=os.path.getmtime, reverse=True)
+        if mp4s:
+            filename = mp4s[0]
 
-#Платформы 
+    if not filename or not os.path.exists(filename):
+        write_log("[ERROR] Файл не найден после скачивания")
+        return None
+
+    size = os.path.getsize(filename) / 1024 / 1024
+    write_log(f"Файл скачан: {filename}, размер: {size:.2f} MB")
+    return filename
+
 def detect_platform(url: str) -> str:
-    if "tiktok.com" in url:
+    u = url.lower()
+    if "tiktok.com" in u:
         return "📹 TikTok"
-    elif "youtube.com" in url or "youtu.be" in url:
-        return "🎥 YouTube Shorts"
-    elif "instagram.com" in url:
+    elif "youtube.com" in u or "youtu.be" in u:
+        return "🎥 YouTube"
+    elif "instagram.com" in u:
         return "📸 Instagram"
+    elif "pinterest.com" in u or "pin.it" in u:
+        return "📌 Pinterest"
     else:
         return "🌍 Видео"
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    save_user(user.id, user.username)
+    write_log(f"Пользователь {user.id} ({user.username}) нажал /start")
+
+    keyboard = [[InlineKeyboardButton("🔥 Поддержать проект и купить ключ", url="https://t.me/VTSLYVPN_bot")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "Привет! Отправь мне ссылку на видео (TikTok, YouTube, Instagram, Pinterest), "
+        "и я скачаю его без водяных знаков.",
+        reply_markup=reply_markup
+    )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
@@ -133,35 +199,52 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         #Антиспам
         now = datetime.now()
-        if user.id in last_request_time:
-            if now - last_request_time[user.id] < timedelta(seconds=10):
-                await update.message.reply_text("⏳ Подождите немного перед следующей загрузкой (лимит 1 видео / 10 секунд).")
-                write_log(f"[WARN] Пользователь {user.id} слишком часто отправляет ссылки")
-                return
+        if user.id in last_request_time and (now - last_request_time[user.id] < timedelta(seconds=10)):
+            await update.message.reply_text("⏳ Подождите немного перед следующей загрузкой (лимит 1 видео / 10 секунд).")
+            write_log(f"[WARN] Пользователь {user.id} слишком часто отправляет ссылки")
+            return
         last_request_time[user.id] = now
 
         if not url.startswith(("http://", "https://")):
-            await update.message.reply_text("❌ Пожалуйста, отправьте действительную ссылку.")
+            await update.message.reply_text(
+                "❌ Пожалуйста, отправьте действительную ссылку.\n\n"
+                "📌 Поддерживаемые платформы:\n"
+                "• TikTok (tiktok.com)\n"
+                "• YouTube (youtube.com, youtu.be)\n"
+                "• Instagram (instagram.com)\n"
+                "• Pinterest (pinterest.com, pin.it)"
+            )
             write_log(f"[WARN] Пользователь {user.id} отправил невалидную ссылку: {url}")
             return
 
         await update.message.reply_text("⏳ Скачиваю видео, пожалуйста подождите...")
         write_log(f"Пользователь {user.id} ({user.username}) запросил: {url}")
 
-        video_file = await run_yt_dlp(url)
-        if not video_file:
-            await update.message.reply_text("❌ Не удалось скачать видео. Проверьте ссылку.")
-            write_log(f"[ERROR] Видео не скачано для {user.id}: {url}")
-            return
+        platform = detect_platform(url)
+
+        #Pinterest
+        if "pinterest.com" in url.lower() or "pin.it" in url.lower():
+            try:
+                path = await download_pinterest_video(url)
+                video_file = str(path)
+            except Exception as e:
+                write_log(f"[ERROR] Pinterest загрузка: {e}")
+                await update.message.reply_text("❌ Не удалось скачать видео из Pinterest. Проверьте, что это видео-пин.")
+                return
+        else:
+            video_file = await run_yt_dlp(url)
+            if not video_file:
+                await update.message.reply_text("❌ Не удалось скачать видео. Проверьте ссылку.")
+                write_log(f"[ERROR] Видео не скачано для {user.id}: {url}")
+                return
 
         try:
-            platform = detect_platform(url)
             update_stats(user.id, user.username)
-
             write_log(f"Отправляю видео пользователю {user.id}")
             with open(video_file, "rb") as f:
                 await update.message.reply_video(
                     video=f,
+                    supports_streaming=True,
                     caption=f"{platform}\nСпасибо нашему спонсору @VTSLYVPN_bot 🙏"
                 )
             write_log(f"Видео отправлено пользователю {user.id}")
@@ -177,11 +260,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         write_log(f"[ERROR] Неизвестная ошибка: {e}")
         await update.message.reply_text("⚠ Произошла ошибка. Мы уже работаем над этим.")
 
-#Админка
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-
     keyboard = [
         [InlineKeyboardButton("📢 Рассылка (текст)", callback_data="broadcast_text")],
         [InlineKeyboardButton("📢 Рассылка (с кнопкой)", callback_data="broadcast_btn")],
@@ -206,8 +287,12 @@ async def admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if os.path.exists(STATS_FILE):
             with open(STATS_FILE, "r", encoding="utf-8") as f:
                 for line in f:
-                    uid, count = line.strip().split(":", 1)
-                    stats[uid] = int(count)
+                    if ":" in line:
+                        uid, count = line.strip().split(":", 1)
+                        try:
+                            stats[uid] = int(count)
+                        except:
+                            stats[uid] = 0
         text = f"👥 Пользователей: {len(load_users())}\n\n📊 Статистика скачиваний:\n"
         for k, v in stats.items():
             text += f"{k}: {v}\n"
@@ -262,10 +347,8 @@ async def admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["broadcast_mode"] = None
 
-# --- MAIN ---
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(admin_buttons))
