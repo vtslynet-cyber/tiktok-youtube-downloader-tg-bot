@@ -121,7 +121,8 @@ project/
 - Первая версия: TikTok / YouTube Shorts / Instagram, админ-панель (рассылка, статистика), логирование.
 
 ---
-
+[![Save Bot](https://img.shields.io/badge/Save%20Bot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/vtslysave_bot)  
+Telegram bot for downloading videos from **TikTok / YouTube / Instagram**
 ## Важно
 - Уважайте авторские права и условия площадок.
 - Не храните токен в публичном репозитории; лучше использовать переменные окружения.
