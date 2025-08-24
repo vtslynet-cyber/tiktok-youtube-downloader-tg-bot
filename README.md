@@ -37,6 +37,7 @@ pip install -U python-telegram-bot==20.* yt-dlp httpx[http2]>=0.26 beautifulsoup
 
 ### 2) FFmpeg
 - **Windows**: скачай и распакуй FFmpeg. Укажи путь в коде:
+[Скачать FFmpeg](https://ffmpeg.org/download.html)
   ```python
   FFMPEG_DIR = os.environ.get("FFMPEG_DIR", r"D:\primer\ffmpeg\bin" if os.name == "nt" else "")
   ```
