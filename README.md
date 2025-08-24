@@ -9,6 +9,8 @@
 - 🎥 YouTube / Shorts (`youtube.com`, `youtu.be`)
 - 📸 Instagram (публичные посты/Reels/сторис; приватные — с cookies)
 - 📌 Pinterest (`pinterest.com`, `pin.it`)
+---
+
 Протестировать. 
 [![Save Bot](https://img.shields.io/badge/Save%20Bot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/vtslysave_bot)  
 Telegram bot for downloading videos from **TikTok / YouTube / Instagram**
